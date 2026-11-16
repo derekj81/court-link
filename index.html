@@ -147,10 +147,12 @@ function renderResults() {
   const games = S.reduce((n, s) => n + (s.games || []).length, 0);
   card.hidden = !results;
   if (!results) return;
-  if (!games) { $("#results").innerHTML = `<p class="note">No games logged on the M5Paper yet.</p>`; return; }
-  $("#results").innerHTML = `<table><thead><tr><th>Day</th><th>Games</th><th>Targets hit</th></tr></thead><tbody>${S.map(s => {
+  const used = S.filter(s => (s.games || []).length || (s.wu || []).length || (s.cd || []).length || s.rf);
+  if (!used.length) { $("#results").innerHTML = `<p class="note">Nothing logged on the M5Paper yet.</p>`; return; }
+  $("#results").innerHTML = `<table><thead><tr><th>Day</th><th>Warm-up</th><th>Games</th><th>Targets hit</th><th>Cool-down</th></tr></thead><tbody>${used.map(s => {
     let a = 0, h = 0; for (const g of s.games || []) for (const t of g.tg || []) { a += t.a; h += t.h; }
-    return `<tr><td>${esc(s.d)}</td><td>${(s.games || []).length}</td><td>${h}/${a}${a ? ` (${Math.round(100 * h / a)}%)` : ""}</td></tr>`;
+    const wu = s.wu || [], done = wu.filter(x => x[1]).length;
+    return `<tr><td>${esc(s.d)}</td><td>${wu.length ? `${done}/${wu.length}` : (s.warm ? "done" : "–")}</td><td>${(s.games || []).length}</td><td>${a ? `${h}/${a} (${Math.round(100 * h / a)}%)` : "–"}</td><td>${s.cool ? "done" : "–"}</td></tr>`;
   }).join("")}</tbody></table>`;
 }
 $("#copy").onclick = async () => {
