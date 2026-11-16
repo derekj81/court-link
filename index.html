@@ -135,7 +135,8 @@ function renderPack() {
   box.innerHTML = `<div class="stat">
       <div><b>${esc(day(pack.made))}</b><small>made</small></div>
       <div><b>${(pack.warm || []).length}</b><small>warm-up cards</small></div>
-      <div><b>${withT}</b><small>opponents with targets</small></div></div>
+      <div><b>${(pack.people || []).length}</b><small>players${pack.today?.length ? `, ${pack.today.length} today` : ""}</small></div>
+      <div><b>${withT}</b><small>with targets</small></div></div>
     ${pack.ego ? `<p class="note">Alter ego: ${esc(pack.ego)}${pack.cue ? ` · "${esc(pack.cue)}"` : ""}</p>` : ""}`;
 }
 const day = d => { const t = new Date(String(d) + "T12:00"); return isNaN(t) ? "?" : t.toLocaleDateString(undefined, { month: "short", day: "numeric" }); };
@@ -200,8 +201,11 @@ function onMessage(m) {
     $("#devStats").hidden = false;
     $("#sBat").textContent = m.bat + "%"; $("#sGames").textContent = m.games; $("#sPack").textContent = m.pack ? day(m.pack) : "none";
     $("#devState").textContent = `Connected${m.rec ? " · recording" : ""} · firmware ${m.ver}`;
+    // older firmware only reports the pack's day; newer reports its id
+    const mine = pack ? pack.id || pack.made : "", theirs = m.pid != null ? m.pid : m.pack;
+    if (pack && mine !== theirs && autoSent !== mine) { autoSent = mine; sendPack(true); }
   }
-  if (m.r === "pack") { progress(null); say(m.ok ? "Pack is on the M5Paper." : "The M5Paper couldn't read the pack. Send it again.", !m.ok); if (m.ok) sendLine("S"); }
+  if (m.r === "pack") { sendingPack = false; progress(null); say(m.ok ? "Pack is on the M5Paper." : "The M5Paper couldn't read the pack. Send it again.", !m.ok); if (m.ok) sendLine("S"); }
 }
 const enc = new TextEncoder();
 let writing = Promise.resolve();
@@ -221,7 +225,7 @@ function connected(l) {
   sendLine(`T${Math.floor(Date.now() / 1000)},${off}`);
 }
 function disconnected() {
-  link = null; $("#dot").classList.remove("on"); $("#devState").textContent = "Not connected";
+  link = null; sendingPack = false; $("#dot").classList.remove("on"); $("#devState").textContent = "Not connected";
   for (const id of ["#sendPack", "#getLog", "#clear"]) $(id).disabled = true;
 }
 
@@ -255,7 +259,7 @@ function demoDevice() {
   const log = { sessions: [{ d: new Date().toLocaleDateString("en-CA"), warm: 1, rec: [[Math.floor(Date.now() / 1000) - 3000, Math.floor(Date.now() / 1000) - 1800]],
     games: [{ t0: Math.floor(Date.now() / 1000) - 2900, t1: Math.floor(Date.now() / 1000) - 2000, us: 11, them: 7, opp: [], tg: [{ l: "Backhand side, 1-2 ft out, knee to shin", a: 9, h: 5 }, { l: "Their kitchen, middle", a: 6, h: 4 }] }] }] };
   const reply = s => setTimeout(() => { for (let i = 0; i < s.length; i += 180) onText(s.slice(i, i + 180)); }, 120);
-  const status = () => JSON.stringify({ r: "status", ver: "1", bat: 87, pack: stored?.made || "", rec: false, sessions: log.sessions.length, games: log.sessions.reduce((n, s) => n + s.games.length, 0), clock: true }) + "\n";
+  const status = () => JSON.stringify({ r: "status", ver: "1", bat: 87, pack: stored?.made || "", pid: stored?.id || "", rec: false, sessions: log.sessions.length, games: log.sessions.reduce((n, s) => n + s.games.length, 0), clock: true }) + "\n";
   return {
     async write(bytes) {
       await new Promise(r => setTimeout(r, 8));
@@ -275,15 +279,18 @@ function demoDevice() {
 }
 
 $("#connect").onclick = () => (new URLSearchParams(location.search).has("demo") ? (connected(demoDevice()), say("Demo device: nothing real is connected.")) : bleConnect());
-$("#sendPack").onclick = () => {
-  if (!pack || !link) return;
+// sends the pack; also done by itself on connecting, whenever the M5Paper has a different pack from this page's
+let sendingPack = false, autoSent = "";
+function sendPack(auto) {
+  if (!pack || !link || updating || sendingPack) return;
   const bytes = enc.encode(JSON.stringify(pack));
-  say("Sending the pack…"); progress(0);
-  sendBytes(enc.encode(`P${bytes.length}\n`)); sendBytes(bytes, progress).catch(e => say("Sending failed: " + e.message, true));
-};
+  sendingPack = true; say(auto ? "Sending your latest pack to the M5Paper…" : "Sending the pack…"); progress(0);
+  sendBytes(enc.encode(`P${bytes.length}\n`)); sendBytes(bytes, progress).catch(e => { sendingPack = false; say("Sending failed: " + e.message, true); });
+}
+$("#sendPack").onclick = () => sendPack(false);
 // firmware updates ride the same Bluetooth link: U<length>,<md5> then the file, checked against the md5 before the M5Paper switches over
 $("#update").onclick = async () => {
-  if (!link || !latest || updating) return;
+  if (!link || !latest || updating || sendingPack) return;
   if (!confirm(`Update the M5Paper to firmware ${latest.ver}? It takes a minute or two. Keep this page open and the phone near the M5Paper.`)) return;
   updating = true; $("#updRow").hidden = true;
   let lock = null; try { lock = await navigator.wakeLock?.request("screen"); } catch {}
