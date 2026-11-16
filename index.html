@@ -72,6 +72,7 @@ th { color: var(--muted); font-weight: 600; }
       <button type="button" id="sendPack" disabled>Send pack</button>
       <button type="button" id="getLog" disabled>Get results</button>
     </div>
+    <div class="row" id="updRow" hidden><button type="button" id="update"></button></div>
     <div class="bar" id="bar" hidden><i></i></div>
     <p class="msg" id="msg" role="status"></p>
   </section>
@@ -177,8 +178,21 @@ function onText(t) {
     try { onMessage(JSON.parse(line)); } catch {}
   }
 }
+let latest = null, devVer = null, updating = false;
+async function checkFirmware(ver) {
+  devVer = ver;
+  try { latest = latest || await (await fetch("firmware/version.json", { cache: "no-cache" })).json(); } catch { return; }
+  const newer = latest && Number(latest.ver) > Number(ver);
+  $("#updRow").hidden = !newer || updating;
+  if (newer) $("#update").textContent = `Update M5Paper: firmware ${ver} → ${latest.ver}`;
+}
 function onMessage(m) {
+  if (m.r === "ota") {
+    updating = false; progress(null);
+    say(m.ok ? "Updated. The M5Paper is restarting; it reconnects in a few seconds." : "The update didn't take: " + (m.err || "unknown error") + ". The M5Paper keeps its old firmware; try again.", !m.ok);
+  }
   if (m.r === "status") {
+    if (m.ver && m.ver !== "demo") checkFirmware(m.ver);
     $("#devStats").hidden = false;
     $("#sBat").textContent = m.bat + "%"; $("#sGames").textContent = m.games; $("#sPack").textContent = m.pack ? day(m.pack) : "none";
     $("#devState").textContent = `Connected${m.rec ? " · recording" : ""} · firmware ${m.ver}`;
@@ -187,9 +201,9 @@ function onMessage(m) {
 }
 const enc = new TextEncoder();
 let writing = Promise.resolve();
-function sendBytes(bytes, onProgress) {
+function sendBytes(bytes, onProgress, size = 180) {
   writing = writing.then(async () => {
-    for (let i = 0; i < bytes.length; i += 180) { await link.write(bytes.subarray(i, i + 180)); onProgress?.(Math.min(1, (i + 180) / bytes.length)); }
+    for (let i = 0; i < bytes.length; i += size) { await link.write(bytes.subarray(i, i + size)); onProgress?.(Math.min(1, (i + size) / bytes.length)); }
   });
   return writing;
 }
@@ -227,26 +241,28 @@ async function bleConnect() {
 async function onDrop() {
   disconnected(); if (wantClose) return;
   say("Connection dropped. Reconnecting…");
-  for (let i = 0; i < 3 && !link; i++) { await new Promise(r => setTimeout(r, 1500)); try { await bleConnect(); } catch {} }
+  for (let i = 0; i < 6 && !link; i++) { await new Promise(r => setTimeout(r, 2000)); try { await bleConnect(); } catch {} }
   if (!link) say("The M5Paper is out of reach. Press Connect when it's nearby.", true);
 }
 
 // ------------------------------------------------------------ ?demo: a pretend M5Paper, for trying the page without the device
 function demoDevice() {
-  let inBuf = "", packLeft = 0, packBuf = "", stored = null;
+  let inBuf = "", packLeft = 0, packBuf = "", stored = null, otaLeft = 0;
   const log = { sessions: [{ d: new Date().toLocaleDateString("en-CA"), warm: 1, rec: [[Math.floor(Date.now() / 1000) - 3000, Math.floor(Date.now() / 1000) - 1800]],
     games: [{ t0: Math.floor(Date.now() / 1000) - 2900, t1: Math.floor(Date.now() / 1000) - 2000, us: 11, them: 7, opp: [], tg: [{ l: "Backhand side, 1-2 ft out, knee to shin", a: 9, h: 5 }, { l: "Their kitchen, middle", a: 6, h: 4 }] }] }] };
   const reply = s => setTimeout(() => { for (let i = 0; i < s.length; i += 180) onText(s.slice(i, i + 180)); }, 120);
-  const status = () => JSON.stringify({ r: "status", ver: "demo", bat: 87, pack: stored?.made || "", rec: false, sessions: log.sessions.length, games: log.sessions.reduce((n, s) => n + s.games.length, 0), clock: true }) + "\n";
+  const status = () => JSON.stringify({ r: "status", ver: "1", bat: 87, pack: stored?.made || "", rec: false, sessions: log.sessions.length, games: log.sessions.reduce((n, s) => n + s.games.length, 0), clock: true }) + "\n";
   return {
     async write(bytes) {
       await new Promise(r => setTimeout(r, 8));
+      if (otaLeft > 0) { otaLeft -= bytes.length; if (otaLeft <= 0) reply('{"r":"ota","ok":true}\n'); return; }
       for (const ch of new TextDecoder().decode(bytes)) {
         if (packLeft > 0) { packBuf += ch; if (--packLeft === 0) { try { stored = JSON.parse(packBuf); reply('{"r":"pack","ok":true}\n'); } catch { reply('{"r":"pack","ok":false}\n'); } } continue; }
         if (ch !== "\n") { inBuf += ch; continue; }
         const l = inBuf; inBuf = "";
         if (l[0] === "T" || l === "S") reply(status());
         else if (l[0] === "P") { packLeft = +l.slice(1); packBuf = ""; }
+        else if (l[0] === "U") { otaLeft = +l.slice(1).split(",")[0]; }
         else if (l === "G") { const s = JSON.stringify(log); reply("L" + s.length + "\n" + s); }
         else if (l === "C") { log.sessions = []; reply(status()); }
       }
@@ -260,6 +276,23 @@ $("#sendPack").onclick = () => {
   const bytes = enc.encode(JSON.stringify(pack));
   say("Sending the pack…"); progress(0);
   sendBytes(enc.encode(`P${bytes.length}\n`)); sendBytes(bytes, progress).catch(e => say("Sending failed: " + e.message, true));
+};
+// firmware updates ride the same Bluetooth link: U<length>,<md5> then the file, checked against the md5 before the M5Paper switches over
+$("#update").onclick = async () => {
+  if (!link || !latest || updating) return;
+  if (!confirm(`Update the M5Paper to firmware ${latest.ver}? It takes a minute or two. Keep this page open and the phone near the M5Paper.`)) return;
+  updating = true; $("#updRow").hidden = true;
+  let lock = null; try { lock = await navigator.wakeLock?.request("screen"); } catch {}
+  try {
+    say("Downloading the update…");
+    const bin = new Uint8Array(await (await fetch("firmware/" + latest.file, { cache: "no-cache" })).arrayBuffer());
+    if (bin.length !== latest.size) throw new Error("the download was incomplete");
+    say("Sending to the M5Paper… keep this page open."); progress(0);
+    await sendBytes(enc.encode(`U${bin.length},${latest.md5}\n`));
+    await sendBytes(bin, progress, 480);
+    say("Sent. The M5Paper is checking the update…");
+  } catch (e) { updating = false; progress(null); say("Update failed: " + e.message, true); $("#updRow").hidden = false; }
+  finally { lock?.release?.(); }
 };
 $("#getLog").onclick = () => { say("Asking for results…"); sendLine("G"); };
 addEventListener("pagehide", () => { wantClose = true; });
