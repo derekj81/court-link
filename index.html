@@ -70,12 +70,14 @@ th { color: var(--muted); font-weight: 600; }
     </div>
     <div class="row">
       <button class="primary" type="button" id="connect">Connect</button>
+      <button type="button" id="connectUsb" hidden>Connect by USB</button>
       <button type="button" id="sendPack" disabled>Send pack</button>
       <button type="button" id="getLog" disabled>Get results</button>
     </div>
     <div class="row" id="updRow" hidden><button type="button" id="update"></button></div>
     <div class="bar" id="bar" hidden><i></i></div>
     <p class="msg" id="msg" role="status"></p>
+    <details id="devLogBox" hidden><summary class="note">Device log</summary><pre id="devLog" style="white-space:pre-wrap;font-size:12px;margin:6px 0 0"></pre></details>
   </section>
 
   <section class="card" id="resultsCard" hidden>
@@ -180,10 +182,11 @@ function onText(t) {
     const nl = buf.indexOf("\n"); if (nl < 0) return;
     const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
     if (/^L\d+$/.test(line)) { blobLeft = blobTotal = +line.slice(1); blob = ""; continue; }
+    if (line.startsWith("# ")) { devLog.push(line.slice(2)); devLog = devLog.slice(-40); $("#devLog").textContent = devLog.join("\n"); $("#devLogBox").hidden = false; continue; }
     try { onMessage(JSON.parse(line)); } catch {}
   }
 }
-let latest = null, devVer = null, updating = false;
+let latest = null, devVer = null, updating = false, devLog = [];
 async function checkFirmware(ver) {
   devVer = ver;
   try { latest = latest || await (await fetch("firmware/version.json", { cache: "no-cache" })).json(); } catch { return; }
@@ -278,6 +281,25 @@ function demoDevice() {
   };
 }
 
+// by cable, from Chrome or Edge on a computer: the same lines as Bluetooth, over the M5Paper's USB serial port (firmware 6 and later)
+let usbPort = null;
+async function usbConnect() {
+  try {
+    const port = await navigator.serial.requestPort({ filters: [{ usbVendorId: 0x1a86 }, { usbVendorId: 0x10c4 }] });
+    await port.open({ baudRate: 115200, bufferSize: 65536 });
+    try { await port.setSignals({ dataTerminalReady: false, requestToSend: false }); } catch {}
+    usbPort = port; say("Connecting by USB…");
+    const reader = port.readable.getReader(), writer = port.writable.getWriter(), dec = new TextDecoder();
+    (async () => {
+      try { for (;;) { const { value, done } = await reader.read(); if (done) break; onText(dec.decode(value, { stream: true })); } }
+      catch {} finally { try { reader.releaseLock(); } catch {} if (usbPort === port) { usbPort = null; disconnected(); say("USB cable disconnected."); } }
+    })();
+    await new Promise(r => setTimeout(r, 2500));  // opening the port can restart the M5Paper; give it time to start
+    connected({ write: b => writer.write(b) });
+    setTimeout(() => { if (link && !devVer) say("No answer over USB. The M5Paper needs firmware 6 or later for this: install it from the install page.", true); }, 5000);
+  } catch (e) { if (e.name !== "NotFoundError") say("Couldn't connect by USB: " + e.message, true); }
+}
+if ("serial" in navigator) { $("#connectUsb").hidden = false; $("#connectUsb").onclick = usbConnect; }
 $("#connect").onclick = () => (new URLSearchParams(location.search).has("demo") ? (connected(demoDevice()), say("Demo device: nothing real is connected.")) : bleConnect());
 // sends the pack; also done by itself on connecting, whenever the M5Paper has a different pack from this page's
 let sendingPack = false, autoSent = "";
