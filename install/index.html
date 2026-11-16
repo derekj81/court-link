@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Install Court Link</title>
+<meta name="robots" content="noindex">
+<script type="module" src="https://cdn.jsdelivr.net/npm/esp-web-tools@10.4.0/dist/web/install-button.js"></script>
+<style>
+:root {
+  --bg: #f3f6f4; --panel: #ffffff; --ink: #18201c; --muted: #5d6b63; --line: #d5ddd8; --chip: #e6ece8;
+  --accent: #2f7d4f; --accent-ink: #ffffff; --bad: #b3261e;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1412; --panel: #161d1a; --ink: #e5ece8; --muted: #93a39a; --line: #29332e; --chip: #1f2925;
+    --accent: #5cc283; --accent-ink: #0f1412; --bad: #ff8a80;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1412; --panel: #161d1a; --ink: #e5ece8; --muted: #93a39a; --line: #29332e; --chip: #1f2925;
+  --accent: #5cc283; --accent-ink: #0f1412; --bad: #ff8a80;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 600px; margin: 0 auto; padding: 16px 16px 48px; display: grid; gap: 14px; }
+h1 { font-size: 22px; margin: 4px 0 0; }
+h2 { font-size: 15px; margin: 0 0 8px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+.note { color: var(--muted); font-size: 14px; margin: 6px 0 0; }
+ol { padding-left: 20px; margin: 6px 0 0; }
+li { margin: 6px 0; }
+.bad { color: var(--bad); }
+esp-web-install-button { --esp-tools-button-color: var(--accent); --esp-tools-button-text-color: var(--accent-ink); --esp-tools-button-border-radius: 10px; }
+button.install { appearance: none; border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink); border-radius: 10px; padding: 12px 18px; font-family: inherit; font-weight: 600; font-size: 16px; cursor: pointer; min-height: 44px; }
+.go { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <div><h1>Install Court Link on an M5Paper</h1><p class="note">The one-time USB install. After this, updates come over Bluetooth from the Court Link page on your phone.</p></div>
+
+  <section class="card">
+    <h2>You need</h2>
+    <ol>
+      <li>A computer with desktop Chrome or Edge: Windows, Mac, Linux or a Chromebook. (Not a phone, and not Safari or Firefox.)</li>
+      <li>A USB cable that carries data, from the computer to the M5Paper. For the original M5Paper, a USB-A to USB-C cable works most reliably.</li>
+      <li>On Windows, if the M5Paper doesn't show up in the list below, install the USB driver for its serial chip: <a href="https://www.wch-ic.com/downloads/CH343SER_ZIP.html" target="_blank" rel="noopener">CH9102 / CH343 (WCH)</a> for newer units, or <a href="https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers" target="_blank" rel="noopener">CP210x (Silicon Labs)</a> for older ones.</li>
+    </ol>
+  </section>
+
+  <section class="card">
+    <h2>Install</h2>
+    <ol>
+      <li>Plug in the M5Paper and press its side button so it's on.</li>
+      <li>Press Install, then pick the M5Paper's port from the list (often named "USB Serial", "CP2104" or "CH9102").</li>
+      <li>When asked, tick <b>Erase device</b>. That wipes everything that was on it before installing.</li>
+      <li>Wait about a minute. When it says the install is done, the M5Paper restarts into Court Link.</li>
+    </ol>
+    <div class="go">
+      <esp-web-install-button manifest="manifest.json">
+        <button slot="activate" class="install">Install Court Link</button>
+        <span slot="unsupported" class="bad">This browser can't install firmware. Use desktop Chrome or Edge.</span>
+        <span slot="not-allowed" class="bad">This page needs a secure (https) address.</span>
+      </esp-web-install-button>
+    </div>
+    <p class="note">If no port appears: try another cable (many only charge), plug straight into the computer, and on a Mac check System Settings, Privacy &amp; Security, "Allow accessories to connect".</p>
+  </section>
+
+  <section class="card">
+    <h2>Afterwards</h2>
+    <ol>
+      <li>On your Android phone: Settings, Connected devices, Pair new device, pick <b>CourtLink</b> (for the record button).</li>
+      <li>Open Court Link from Court Replay's Coach tab and press Connect, then Send pack.</li>
+    </ol>
+    <p class="note"><a href="../">Back to Court Link</a></p>
+  </section>
+</main>
+</body>
+</html>
