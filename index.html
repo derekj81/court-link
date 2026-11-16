@@ -294,9 +294,10 @@ async function usbConnect() {
       try { for (;;) { const { value, done } = await reader.read(); if (done) break; onText(dec.decode(value, { stream: true })); } }
       catch {} finally { try { reader.releaseLock(); } catch {} if (usbPort === port) { usbPort = null; disconnected(); say("USB cable disconnected."); } }
     })();
-    await new Promise(r => setTimeout(r, 2500));  // opening the port can restart the M5Paper; give it time to start
+    await new Promise(r => setTimeout(r, 5000));  // opening the port restarts the M5Paper; give it time to start
     connected({ write: b => writer.write(b) });
-    setTimeout(() => { if (link && !devVer) say("No answer over USB. The M5Paper needs firmware 6 or later for this: install it from the install page.", true); }, 5000);
+    setTimeout(() => { if (link && !devVer) sendLine("S"); }, 2500);
+    setTimeout(() => { if (link && !devVer) say("No answer over USB. The M5Paper needs firmware 7 or later for this: install it from the install page.", true); }, 7000);
   } catch (e) { if (e.name !== "NotFoundError") say("Couldn't connect by USB: " + e.message, true); }
 }
 if ("serial" in navigator) { $("#connectUsb").hidden = false; $("#connectUsb").onclick = usbConnect; }
